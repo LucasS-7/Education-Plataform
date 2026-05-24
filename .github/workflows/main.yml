@@ -1,4 +1,4 @@
-name: Build and Deploy Microservices
+name: Build and Push Docker Images
 
 on:
   push:
@@ -6,21 +6,13 @@ on:
       - main
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
 
-      # =========================
-      # CHECKOUT
-      # =========================
-
       - name: Checkout repository
         uses: actions/checkout@v3
-
-      # =========================
-      # JAVA 17
-      # =========================
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -28,27 +20,15 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # =========================
-      # BUILD COURSE SERVICE
-      # =========================
-
       - name: Build Course Service
         run: |
           cd course-service
           mvn clean package -DskipTests
 
-      # =========================
-      # BUILD ENROLLMENT SERVICE
-      # =========================
-
       - name: Build Enrollment Service
         run: |
           cd enrollment-service
           mvn clean package -DskipTests
-
-      # =========================
-      # LOGIN DOCKER HUB
-      # =========================
 
       - name: Log in to DockerHub
         uses: docker/login-action@v2
@@ -56,88 +36,18 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # =========================
-      # BUILD DOCKER IMAGES
-      # =========================
-
-      - name: Build Course Service Docker Image
+      - name: Build Course Docker Image
         run: |
           docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/course-service:latest ./course-service
 
-      - name: Build Enrollment Service Docker Image
+      - name: Build Enrollment Docker Image
         run: |
           docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/enrollment-service:latest ./enrollment-service
 
-      # =========================
-      # PUSH DOCKER IMAGES
-      # =========================
-
-      - name: Push Course Service Docker Image
+      - name: Push Course Docker Image
         run: |
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/course-service:latest
 
-      - name: Push Enrollment Service Docker Image
+      - name: Push Enrollment Docker Image
         run: |
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/enrollment-service:latest
-
-      # =========================
-      # AWS CREDENTIALS
-      # =========================
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-
-      # =========================
-      # SSH KEY
-      # =========================
-
-      - name: Add SSH Key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-
-      # =========================
-      # DEPLOY EC2
-      # =========================
-
-      - name: Deploy to EC2
-        run: |
-          ssh -i ~/.ssh/id_rsa \
-          -o StrictHostKeyChecking=no \
-          -o UserKnownHostsFile=/dev/null \
-          ${{ secrets.USER_SERVER }}@${{ secrets.EC2_HOST }} << 'EOF'
-
-            # Login DockerHub
-            echo ${{ secrets.DOCKERHUB_TOKEN }} | docker login \
-            -u ${{ secrets.DOCKERHUB_USERNAME }} \
-            --password-stdin
-
-            # Pull imágenes
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/course-service:latest
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/enrollment-service:latest
-
-            # Stop y remove antiguos
-            docker stop course-service || true
-            docker rm course-service || true
-
-            docker stop enrollment-service || true
-            docker rm enrollment-service || true
-
-            # Ejecutar course-service
-            docker run -d \
-              --name course-service \
-              -p 8081:8081 \
-              ${{ secrets.DOCKERHUB_USERNAME }}/course-service:latest
-
-            # Ejecutar enrollment-service
-            docker run -d \
-              --name enrollment-service \
-              -p 8082:8082 \
-              ${{ secrets.DOCKERHUB_USERNAME }}/enrollment-service:latest
-
-          EOF
