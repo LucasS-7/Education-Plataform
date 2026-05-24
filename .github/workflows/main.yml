@@ -11,11 +11,45 @@ jobs:
 
     steps:
 
-      # 1. Descargar código
+      # =========================
+      # CHECKOUT
+      # =========================
+
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 2. Login DockerHub
+      # =========================
+      # JAVA 17
+      # =========================
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # =========================
+      # BUILD COURSE SERVICE
+      # =========================
+
+      - name: Build Course Service
+        run: |
+          cd course-service
+          mvn clean package -DskipTests
+
+      # =========================
+      # BUILD ENROLLMENT SERVICE
+      # =========================
+
+      - name: Build Enrollment Service
+        run: |
+          cd enrollment-service
+          mvn clean package -DskipTests
+
+      # =========================
+      # LOGIN DOCKER HUB
+      # =========================
+
       - name: Log in to DockerHub
         uses: docker/login-action@v2
         with:
@@ -23,30 +57,26 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # =========================
-      # COURSE SERVICE
+      # BUILD DOCKER IMAGES
       # =========================
 
-      # 3. Build course-service
-      - name: Build Course Service Image
+      - name: Build Course Service Docker Image
         run: |
           docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/course-service:latest ./course-service
 
-      # 4. Push course-service
-      - name: Push Course Service Image
-        run: |
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/course-service:latest
-
-      # =========================
-      # ENROLLMENT SERVICE
-      # =========================
-
-      # 5. Build enrollment-service
-      - name: Build Enrollment Service Image
+      - name: Build Enrollment Service Docker Image
         run: |
           docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/enrollment-service:latest ./enrollment-service
 
-      # 6. Push enrollment-service
-      - name: Push Enrollment Service Image
+      # =========================
+      # PUSH DOCKER IMAGES
+      # =========================
+
+      - name: Push Course Service Docker Image
+        run: |
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/course-service:latest
+
+      - name: Push Enrollment Service Docker Image
         run: |
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/enrollment-service:latest
 
@@ -54,7 +84,6 @@ jobs:
       # AWS CREDENTIALS
       # =========================
 
-      # 7. Configurar AWS
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -66,7 +95,6 @@ jobs:
       # SSH KEY
       # =========================
 
-      # 8. Configurar SSH
       - name: Add SSH Key
         run: |
           mkdir -p ~/.ssh
@@ -77,7 +105,6 @@ jobs:
       # DEPLOY EC2
       # =========================
 
-      # 9. Deploy en EC2
       - name: Deploy to EC2
         run: |
           ssh -i ~/.ssh/id_rsa \
@@ -90,24 +117,24 @@ jobs:
             -u ${{ secrets.DOCKERHUB_USERNAME }} \
             --password-stdin
 
-            # Descargar imágenes
+            # Pull imágenes
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/course-service:latest
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/enrollment-service:latest
 
-            # Detener contenedores antiguos
+            # Stop y remove antiguos
             docker stop course-service || true
             docker rm course-service || true
 
             docker stop enrollment-service || true
             docker rm enrollment-service || true
 
-            # Ejecutar Course Service
+            # Ejecutar course-service
             docker run -d \
               --name course-service \
               -p 8081:8081 \
               ${{ secrets.DOCKERHUB_USERNAME }}/course-service:latest
 
-            # Ejecutar Enrollment Service
+            # Ejecutar enrollment-service
             docker run -d \
               --name enrollment-service \
               -p 8082:8082 \
